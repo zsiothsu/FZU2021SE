@@ -1,6 +1,7 @@
 import sys
 import re
 from typing import Dict, Any
+import copy
 
 from pypinyin import lazy_pinyin
 
@@ -87,24 +88,70 @@ file_output = sys.argv[3]
 ##################################################
 #                class definition                #
 ##################################################
-# class Word:
-#     def __init__(self, word):
-#         self.word = word
-#
-#     def garble_origin_pinyin(self):
-#         pass
-#
-#     def garble_random_pinyin(self):
-#         pass
-#
-#     def garble_initial_pintin(self):
-#         pass
-#
-#     def garble_random_initial_pinyin(self):
-#         pass
-#
-#     def garble_split_chinese_character(self):
-#         pass
+class Word:
+    def __init__(self, word):
+        self.original_word = word
+
+    def confuse_pinyin(self):
+        confuse_enum = []
+        self.word = list(self.original_word)
+
+        # Enumerate possible confusing forms of Chinese characters
+        # - Chinese character
+        # - pinyin
+        # - initials
+        for i in range(len(self.word)):
+            c = self.word[i]
+
+            # if it's a Chinese character
+            if (u'\u4e00' <= c <= u'\u9fa5') or (u'\u3400' <= c <= u'\u4db5'):
+                li = []
+                pin = lazy_pinyin(c)
+                pin = pin[0]
+                li.append(pin)
+                li.append(list(pin))
+                li.append(pin[0])
+                self.word[i] = li
+            else:
+                pass
+
+        for c in self.word:
+            # Latin: no confusions
+            if not isinstance(c, list):
+                if len(confuse_enum) == 0:
+                    confuse_enum.append([c])
+                else:
+                    for li in confuse_enum:
+                        li.append(c)
+            # Chinese: muti-confusions
+            else:
+                if len(confuse_enum) == 0:
+                    for one_confuse in c:
+                        if not isinstance(one_confuse, list):
+                            confuse_enum.append([one_confuse])
+                        else:
+                            confuse_enum.append(one_confuse)
+                else:
+                    pre = confuse_enum
+                    new_confuse_enum = []
+                    for one_confuse in c:
+                        new_confuse = copy.deepcopy(pre)
+                        # print(new_confuse)
+                        if not isinstance(one_confuse, list):
+                            for existed_confuse in new_confuse:
+                                existed_confuse.append(one_confuse)
+                        else:
+                            for existed_confuse in new_confuse:
+                                for x in one_confuse:
+                                    existed_confuse.append(x)
+                        new_confuse_enum = new_confuse_enum + new_confuse
+
+                    confuse_enum = new_confuse_enum
+
+        return confuse_enum
+
+    def confuse_split_chinese_character(self):
+        pass
 
 
 class Filter:
@@ -118,9 +165,15 @@ class Filter:
         # tree of sensitive words
         self.sensitive_dict = {}
 
+        # output
+        self.total = 0
+        self.result = []
+
     def read_sensitive_words(self, filename):
         with open(filename) as words:
             lines = words.readlines()
+            # to record the order of sensitive word
+            word_count = 0
             for line in lines:
                 line = line.replace('\r', '').replace('\n', '')
                 self.original_sensitive_word_list.append(line)
@@ -129,22 +182,29 @@ class Filter:
                 # Latinization:
                 # convert Chinese characters to full spelling
                 # reserve alphabet string
-                latin = lazy_pinyin(line)
-                word = []
-                # map pinyin and letter to specific number
-                for i in range(len(latin)):
-                    if latin[i] == '':
-                        continue
-                    if latin[i] not in pinyin_alpha_map:
-                        for c in latin[i]:
-                            word.append(pinyin_alpha_map[c])
-                        continue
-                    word.append(pinyin_alpha_map[latin[i]])
-                
-                self.sensitive_word_list.append(word)
+
+                confuse = Word(line)
+                confused_latin_list = confuse.confuse_pinyin()
+
+                for latin in confused_latin_list:
+                    word = []
+                    # map pinyin and letter to specific number
+                    for i in range(len(latin)):
+                        if latin[i] == '':
+                            continue
+                        if latin[i] not in pinyin_alpha_map:
+                            for c in latin[i]:
+                                word.append(pinyin_alpha_map[c])
+                            continue
+                        word.append(pinyin_alpha_map[latin[i]])
+
+                    self.sensitive_word_list.append((word, word_count))
+
+                word_count += 1
 
     def build_sensitive_word_tree(self):
-        for index, word in enumerate(self.sensitive_word_list):
+        for index, word_count_tuple in enumerate(self.sensitive_word_list):
+            word = word_count_tuple[0]
             current = self.sensitive_dict
             for i, c in enumerate(word):
                 if c not in current:
@@ -156,14 +216,22 @@ class Filter:
                     current = child
                 if i == len(word) - 1:
                     current['end'] = True
-                    current['word'] = index
+                    current['word'] = word_count_tuple[1]
 
     def logger(self, begin, end, index):
-        print('Line{}: <{}> {}'.format(
+        self.result.append((
             self.lineno,
             self.original_sensitive_word_list[index],
             self.cline_org[begin:end]
         ))
+        self.total += 1
+
+    def output(self, filename):
+        with open(filename, 'w+') as ans:
+            print("Total: {}".format(self.total), file=ans)
+
+            for i in self.result:
+                print('Line{}: <{}> {}'.format(i[0], i[1], i[2]), file=ans)
 
     def filter_line(self, sentence):
         current = self.sensitive_dict
@@ -199,7 +267,7 @@ class Filter:
                 self.cline = self.cline.lower()
 
                 # Latinization
-                latin = lazy_pinyin(self.cline)
+                latin = lazy_pinyin(list(self.cline))
                 sentence = []
                 # map pinyin and letter to specific number
                 for i in range(len(latin)):
@@ -210,7 +278,7 @@ class Filter:
                             sentence.append(pinyin_alpha_map[c])
                         continue
                     sentence.append(pinyin_alpha_map[latin[i]])
-                
+
                 self.filter_line(sentence)
 
 
@@ -241,6 +309,7 @@ def main():
     f.read_sensitive_words(file_words)
     f.build_sensitive_word_tree()
     f.filter(file_org)
+    f.output(file_output)
 
 
 if __name__ == '__main__':
