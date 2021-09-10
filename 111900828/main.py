@@ -83,7 +83,8 @@ HANZI_UNICODE_RANGE = u'\u3400-\u4db5\u4e00-\u9fa5'
 file_words = sys.argv[1]
 file_org = sys.argv[2]
 file_output = sys.argv[3]
-
+# file_words = './example/words.txt'
+# file_org = './example/org.txt'
 
 ##################################################
 #                class definition                #
@@ -219,10 +220,14 @@ class Filter:
                     current['word'] = word_count_tuple[1]
 
     def logger(self, begin, end, index):
+        if len(self.result) != 0:
+            if begin == (self.result[-1])[3] and self.lineno == (self.result[-1])[0]:
+                self.result.pop()
         self.result.append((
             self.lineno,
             self.original_sensitive_word_list[index],
-            self.cline_org[begin:end]
+            self.cline_org[begin:end],
+            begin,
         ))
         self.total += 1
 
@@ -235,7 +240,6 @@ class Filter:
 
     def filter_line(self, sentence):
         current = self.sensitive_dict
-
         word_begin_index = 0
 
         for i, c in enumerate(sentence):
@@ -244,7 +248,7 @@ class Filter:
             if c not in current:
                 current = self.sensitive_dict
                 word_begin_index = 0
-            else:
+            if c in current:
                 if current == self.sensitive_dict:
                     word_begin_index = i
 
@@ -280,7 +284,6 @@ class Filter:
                     sentence.append(pinyin_alpha_map[latin[i]])
 
                 self.filter_line(sentence)
-
 
 ##################################################
 #              function definition               #
