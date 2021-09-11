@@ -1689,10 +1689,31 @@ HANZI_BREAKER_MAP = {
 
 
 def is_breakable(c):
+    """ is breakable
+
+    Determine whether Chinese characters can be split
+
+    :arg
+        c[string]: characters to be test
+    :return -> Boolean:
+        True: it can be split
+        False: it cannot be split
+    """
+
     return c in HANZI_BREAKER_MAP
 
-
 def get(c):
+    """ get components
+
+    get all parts of a Chinese character
+
+    :arg:
+        c[string]: character
+
+    :return -> list:
+        a list including all parts of a Chinese character
+    """
+
     if c in HANZI_BREAKER_MAP:
         return HANZI_BREAKER_MAP[c]
     else:

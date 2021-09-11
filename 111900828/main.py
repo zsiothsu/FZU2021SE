@@ -1,9 +1,9 @@
 import sys
 import re
-from typing import Dict, Any
 import copy
 
 from pypinyin import lazy_pinyin
+
 import hanziBreaker
 
 ##################################################
@@ -89,6 +89,7 @@ file_org = sys.argv[2]
 file_output = sys.argv[3]
 
 
+# for test
 # file_words = './example/words.txt'
 # file_org = './example/org.txt'
 # file_output = './output.txt'
@@ -99,6 +100,7 @@ file_output = sys.argv[3]
 ##################################################
 class Word:
     """Word
+
     Word class, for enumerating various confusing of words
 
     :attributes:
@@ -111,7 +113,6 @@ class Word:
             word[string]: word to be processed
         """
         self.original_word = word
-
 
     def confuse(self):
         """ enumerate various confusing of words
@@ -137,14 +138,14 @@ class Word:
         global map_cnt
 
         confuse_enum = []
-        self.word = list(self.original_word)
+        word = list(self.original_word)
 
         # Enumerate possible confusing forms of Chinese characters
         # - Chinese character
         # - pinyin
         # - initials
-        for i in range(len(self.word)):
-            c = self.word[i]
+        for i in range(len(word)):
+            c = word[i]
 
             # if it's a Chinese character
             if (u'\u4e00' <= c <= u'\u9fa5') or (u'\u3400' <= c <= u'\u4db5'):
@@ -168,11 +169,11 @@ class Word:
                         glyph.append(part)
                     li.append(glyph)
 
-                self.word[i] = li
+                word[i] = li
             else:
                 pass
 
-        for c in self.word:
+        for c in word:
             # Latin: no confusions
             if not isinstance(c, list):
                 if len(confuse_enum) == 0:
@@ -210,22 +211,18 @@ class Word:
 
 class Filter:
     """ Filter
+
     Main class of sensitve word detector
 
     :attributes
-        lineno[int]: current line number
         original_sensitive_word_list[list]: list of original sensitive words
         sensitive_word_list[list]: list of sensitive words mapped to specific number
         sensitive_dict[dict]: a Trie, main data structure for scanning sensitive words
         total[int]: counter for words detected
         result[list]: store result
     """
+
     def __init__(self):
-        """
-
-        """
-        self.lineno = 0
-
         # sensitive words
         self.original_sensitive_word_list = []
         self.sensitive_word_list = []
@@ -237,37 +234,65 @@ class Filter:
         self.total = 0
         self.result = []
 
+        # status, private usage
+        self.__cline_org = ''
+        self.__lineno = 0
+
     def read_sensitive_words(self, filename):
-        with open(filename) as words:
-            lines = words.readlines()
-            # to record the order of sensitive word
-            word_count = 0
-            for line in lines:
-                line = line.replace('\r', '').replace('\n', '')
-                self.original_sensitive_word_list.append(line)
-                line = line.lower()
+        """ sensitive words reader
 
-                # Enumerate all possible variants of a word
-                # including latin, pinyin and glyph
-                confuse = Word(line)
-                confused_word_list = confuse.confuse()
+        read sensitive words from given file and put into sensitive_word_list
 
-                for confused_word in confused_word_list:
-                    word = []
-                    # map pinyin and letter to specific number
-                    for i in range(len(confused_word)):
-                        if confused_word[i] == '':
-                            continue
-                        if confused_word[i] in pinyin_alpha_map:
-                            word.append(pinyin_alpha_map[confused_word[i]])
-                        elif confused_word[i] in glyph_code_map:
-                            word.append(glyph_code_map[confused_word[i]])
+        :arg
+            filename[string]: file name
 
-                    self.sensitive_word_list.append((word, word_count))
+        :return none
 
-                word_count += 1
+        :exception
+            IOError: unable to open the given file
+        """
+        try:
+            with open(filename) as words:
+                lines = words.readlines()
+                # to record the order of sensitive word
+                word_count = 0
+                for line in lines:
+                    line = line.replace('\r', '').replace('\n', '')
+                    self.original_sensitive_word_list.append(line)
+                    line = line.lower()
+
+                    # Enumerate all possible variants of a word
+                    # including latin, pinyin and glyph
+                    confuse = Word(line)
+                    confused_word_list = confuse.confuse()
+
+                    for confused_word in confused_word_list:
+                        word = []
+                        # map pinyin and letter to specific number
+                        for i in range(len(confused_word)):
+                            if confused_word[i] == '':
+                                continue
+                            if confused_word[i] in pinyin_alpha_map:
+                                word.append(pinyin_alpha_map[confused_word[i]])
+                            elif confused_word[i] in glyph_code_map:
+                                word.append(glyph_code_map[confused_word[i]])
+
+                        self.sensitive_word_list.append((word, word_count))
+
+                    word_count += 1
+        except IOError:
+            raise IOError("[word reader] Unable to open the word file")
+
+        else:
+            self.build_sensitive_word_tree()
 
     def build_sensitive_word_tree(self):
+        """ build words tree
+
+        using a trie tree as main structure storing sensitive words
+
+        :return none
+        """
         for index, word_count_tuple in enumerate(self.sensitive_word_list):
             word = word_count_tuple[0]
             current = self.sensitive_dict
@@ -284,26 +309,59 @@ class Filter:
                     current['word'] = word_count_tuple[1]
 
     def logger(self, begin, end, index):
+        """ logger
+
+        Record results
+
+        :arg
+            begin: begin index of the word at original text
+            end: end index of the word at original text
+            index: the order of word in sensitive words list
+
+        :return: none
+        """
         if len(self.result) != 0:
-            if begin == (self.result[-1])[3] and self.lineno == (self.result[-1])[0]:
+            if begin == (self.result[-1])[3] and self.__lineno == (self.result[-1])[0]:
                 self.result.pop()
                 self.total -= 1
         self.result.append((
-            self.lineno,
+            self.__lineno,
             self.original_sensitive_word_list[index],
-            self.cline_org[begin:end],
+            self.__cline_org[begin:end],
             begin,
         ))
         self.total += 1
 
     def output(self, filename):
-        with open(filename, 'w+') as ans:
-            print("Total: {}".format(self.total), file=ans)
+        """ answer export
 
-            for i in self.result:
-                print('Line{}: <{}> {}'.format(i[0], i[1], i[2]), file=ans)
+        export answer
+
+        :arg
+            filename[string]: output file
+
+        :return: none
+        """
+        try:
+            with open(filename, 'w+') as ans:
+                print("Total: {}".format(self.total), file=ans)
+
+                for i in self.result:
+                    print('Line{}: <{}> {}'.format(i[0], i[1], i[2]), file=ans)
+        except IOError:
+            raise IOError("[answer export] Unable to open ans file")
 
     def filter_line(self, sentence):
+        """ filter a single line
+
+        filter a single line. cannot detect sensitive words in
+        two different lines at the same time
+
+        :arg
+            sentence[string]: text to be detected
+
+        :return: none
+        """
         current = self.sensitive_dict
         word_begin_index = 0
 
@@ -386,7 +444,7 @@ class Filter:
                         self.logger(word_begin_index, i + 1, current['word'])
                     i = i + 1
                     continue
-                    
+
                 # switch to last glyph code branch
                 if len(fail_pointer_stack) != 0:
                     i = (fail_pointer_stack[-1])[0]
@@ -400,24 +458,33 @@ class Filter:
             i += 1
 
     def filter(self, filename):
-        with open(filename) as org:
-            lines = org.readlines()
-            for line in lines:
-                self.cline_org = line
-                self.cline = line.replace('\r', '').replace('\n', '')
-                self.lineno += 1
+        try:
+            with open(filename) as org:
+                lines = org.readlines()
+                for line in lines:
+                    self.__cline_org = line
+                    cline = line.replace('\r', '').replace('\n', '')
+                    self.__lineno += 1
 
-                # Reserve hanzi and letter only
-                self.cline = re.sub(u'([^\u3400-\u4db5\u4e00-\u9fa5a-zA-Z])', '*', self.cline)
-                self.cline = self.cline.lower()
+                    # Reserve hanzi and letter only
+                    cline = re.sub(u'([^\u3400-\u4db5\u4e00-\u9fa5a-zA-Z])', '*', cline)
+                    cline = cline.lower()
 
-                self.filter_line(self.cline)
+                    self.filter_line(cline)
+        except IOError:
+            raise IOError("[filter] Unable to open the file to be detected")
 
 
 ##################################################
 #              function definition               #
 ##################################################
 def init_pinyin_alpha_map():
+    """ initialize map
+
+    map pinyin and alphabet to specific number
+    
+    :return: none
+    """
     global map_cnt
 
     # Placeholder
@@ -441,7 +508,6 @@ def main():
     init_pinyin_alpha_map()
     f = Filter()
     f.read_sensitive_words(file_words)
-    f.build_sensitive_word_tree()
     f.filter(file_org)
     f.output(file_output)
 
