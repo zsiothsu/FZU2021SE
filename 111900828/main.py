@@ -4,12 +4,13 @@ from typing import Dict, Any
 import copy
 
 from pypinyin import lazy_pinyin
+import hanziBreaker
 
 ##################################################
 #              variable definition               #
 ##################################################
 """list and map
-    @brief: map pinyin syllable or letter to specified number
+    @brief: map pinyin syllable, glyph or letter to specified number
 """
 PINYIN_LIST = [
     'a', 'o', 'e', 'ba', 'bo', 'bi', 'bu', 'pa', 'po', 'pi', 'pu',
@@ -68,10 +69,13 @@ ALPHABET_LIST = [
     'q', 'r', 's', 't', 'u', 'v', 'w', 'x',
     'y', 'z'
 ]
-pinyin_alpha_map: dict[Any, Any] = {}
+pinyin_alpha_map = {}
+glyph_code_map = {}
 
-PINYIN_CNT = len(PINYIN_LIST)
-ALPHABET_CNT = len(ALPHABET_LIST)
+"""map count
+    @brief: global counter for map of pinyin, alphabet and glyph code
+"""
+map_cnt = 0
 
 HANZI_UNICODE_RANGE = u'\u3400-\u4db5\u4e00-\u9fa5'
 
@@ -83,17 +87,55 @@ HANZI_UNICODE_RANGE = u'\u3400-\u4db5\u4e00-\u9fa5'
 file_words = sys.argv[1]
 file_org = sys.argv[2]
 file_output = sys.argv[3]
+
+
 # file_words = './example/words.txt'
 # file_org = './example/org.txt'
+# file_output = './output.txt'
+
 
 ##################################################
 #                class definition                #
 ##################################################
 class Word:
+    """Word
+    Word class, for enumerating various confusing of words
+
+    :attributes:
+        original_word[string]: store thr original word
+    """
+
     def __init__(self, word):
+        """ create a Word object
+        :arg
+            word[string]: word to be processed
+        """
         self.original_word = word
 
-    def confuse_pinyin(self):
+
+    def confuse(self):
+        """ enumerate various confusing of words
+
+        for chinese, confusing can be: single Chinese character,
+        full spelling pinyin, initail pinyin and dismantling of
+        Chinese characters
+        There is no confusing on English, a word will be processed
+        in letter
+
+        :arg
+            self.original_word[string]: word to be processed
+        :return -> list
+            a list of all confusing
+            for example, '你好':
+                [['ni', 'hao'], ['n', 'i', 'hao'], ['n', 'hao'],
+                 ['亻', '尔', 'hao'], ['ni', 'h', 'a', 'o'], ['n', 'i', 'h', 'a', 'o'],
+                 ['n', 'h', 'a', 'o'], ['亻', '尔', 'h', 'a', 'o'], ['ni', 'h'],
+                 ['n', 'i', 'h'], ['n', 'h'], ['亻', '尔', 'h'],
+                 ['ni', '女', '子'], ['n', 'i', '女', '子'], ['n', '女', '子'],
+                 ['亻', '尔', '女', '子']]
+        """
+        global map_cnt
+
         confuse_enum = []
         self.word = list(self.original_word)
 
@@ -107,11 +149,25 @@ class Word:
             # if it's a Chinese character
             if (u'\u4e00' <= c <= u'\u9fa5') or (u'\u3400' <= c <= u'\u4db5'):
                 li = []
+
+                # pinyin
                 pin = lazy_pinyin(c)
                 pin = pin[0]
                 li.append(pin)
                 li.append(list(pin))
                 li.append(pin[0])
+
+                # split of Chinese character
+                if hanziBreaker.is_breakable(c):
+                    hanzi_part = hanziBreaker.get(c)
+                    glyph = []
+                    for part in hanzi_part:
+                        if part not in glyph_code_map:
+                            glyph_code_map[part] = map_cnt
+                            map_cnt = map_cnt + 1
+                        glyph.append(part)
+                    li.append(glyph)
+
                 self.word[i] = li
             else:
                 pass
@@ -151,12 +207,23 @@ class Word:
 
         return confuse_enum
 
-    def confuse_split_chinese_character(self):
-        pass
-
 
 class Filter:
+    """ Filter
+    Main class of sensitve word detector
+
+    :attributes
+        lineno[int]: current line number
+        original_sensitive_word_list[list]: list of original sensitive words
+        sensitive_word_list[list]: list of sensitive words mapped to specific number
+        sensitive_dict[dict]: a Trie, main data structure for scanning sensitive words
+        total[int]: counter for words detected
+        result[list]: store result
+    """
     def __init__(self):
+        """
+
+        """
         self.lineno = 0
 
         # sensitive words
@@ -180,24 +247,21 @@ class Filter:
                 self.original_sensitive_word_list.append(line)
                 line = line.lower()
 
-                # Latinization:
-                # convert Chinese characters to full spelling
-                # reserve alphabet string
-
+                # Enumerate all possible variants of a word
+                # including latin, pinyin and glyph
                 confuse = Word(line)
-                confused_latin_list = confuse.confuse_pinyin()
+                confused_word_list = confuse.confuse()
 
-                for latin in confused_latin_list:
+                for confused_word in confused_word_list:
                     word = []
                     # map pinyin and letter to specific number
-                    for i in range(len(latin)):
-                        if latin[i] == '':
+                    for i in range(len(confused_word)):
+                        if confused_word[i] == '':
                             continue
-                        if latin[i] not in pinyin_alpha_map:
-                            for c in latin[i]:
-                                word.append(pinyin_alpha_map[c])
-                            continue
-                        word.append(pinyin_alpha_map[latin[i]])
+                        if confused_word[i] in pinyin_alpha_map:
+                            word.append(pinyin_alpha_map[confused_word[i]])
+                        elif confused_word[i] in glyph_code_map:
+                            word.append(glyph_code_map[confused_word[i]])
 
                     self.sensitive_word_list.append((word, word_count))
 
@@ -223,6 +287,7 @@ class Filter:
         if len(self.result) != 0:
             if begin == (self.result[-1])[3] and self.lineno == (self.result[-1])[0]:
                 self.result.pop()
+                self.total -= 1
         self.result.append((
             self.lineno,
             self.original_sensitive_word_list[index],
@@ -242,21 +307,97 @@ class Filter:
         current = self.sensitive_dict
         word_begin_index = 0
 
-        for i, c in enumerate(sentence):
-            if c == 0:
+        # fail pointer:
+        #   fail_pointer_stack(position, dict of glyph code branch, curren word_begin_index)
+
+        #   When the Chinese character has both pinyin code and glyph code,
+        #   pinyin code is preferred for matching.When it cannot be matched,
+        #   the fail pointer is used to switch to the branch of glyph code.
+        fail_pointer_stack: (int, dict, int) = []
+
+        i = 0
+
+        while i < len(sentence):
+            c = sentence[i]
+
+            if c == '*':
+                i = i + 1
                 continue
-            if c not in current:
-                current = self.sensitive_dict
-                word_begin_index = 0
-            if c in current:
-                if current == self.sensitive_dict:
-                    word_begin_index = i
 
-                child = current[c]
-                current = child
+            # is a breakable hanzi
+            if c in glyph_code_map:
+                pinyin_code = pinyin_alpha_map[lazy_pinyin(c)[0]]
+                glyph_code = glyph_code_map[c]
 
-                if current['end']:
-                    self.logger(word_begin_index, i + 1, current['word'])
+                is_pinyin_code_in_current = pinyin_code in current
+                is_glyph_code_in_current = glyph_code in current
+
+                # if not matched, try to return dict to root
+                if (not is_pinyin_code_in_current) and (not is_glyph_code_in_current):
+                    current = self.sensitive_dict
+                    word_begin_index = 0
+
+                if is_pinyin_code_in_current:
+                    # append fail pointer for glyph code branch
+                    if is_glyph_code_in_current:
+                        fail_pointer_stack.append((i + 1, current[glyph_code], word_begin_index))
+
+                    if current == self.sensitive_dict:
+                        word_begin_index = i
+
+                    current = current[pinyin_code]
+                    if current['end']:
+                        self.logger(word_begin_index, i + 1, current['word'])
+
+                elif is_glyph_code_in_current:
+                    if current == self.sensitive_dict:
+                        word_begin_index = i
+
+                    current = current[glyph_code]
+                    if current['end']:
+                        self.logger(word_begin_index, i + 1, current['word'])
+
+                # failed to match
+                else:
+                    # switch to last glyph code branch
+                    if len(fail_pointer_stack) != 0:
+                        i = fail_pointer_stack[-1][0]
+                        current = fail_pointer_stack[-1][1]
+                        word_begin_index = fail_pointer_stack[-1][2]
+                        fail_pointer_stack.pop()
+                        continue
+                    else:
+                        current = self.sensitive_dict
+                        word_begin_index = 0
+
+            # is a unbreakable hanzi or a latin letter
+            else:
+                pinyin_code = pinyin_alpha_map[lazy_pinyin(c)[0]]
+                if pinyin_code not in current:
+                    current = self.sensitive_dict
+                    word_begin_index = 0
+
+                if pinyin_code in current:
+                    if current == self.sensitive_dict:
+                        word_begin_index = i
+
+                    current = current[pinyin_code]
+                    if current['end']:
+                        self.logger(word_begin_index, i + 1, current['word'])
+                    i = i + 1
+                    continue
+                    
+                # switch to last glyph code branch
+                if len(fail_pointer_stack) != 0:
+                    i = (fail_pointer_stack[-1])[0]
+                    current = (fail_pointer_stack[-1])[1]
+                    word_begin_index = fail_pointer_stack[-1][2]
+                    fail_pointer_stack.pop()
+                else:
+                    current = self.sensitive_dict
+                    word_begin_index = 0
+
+            i += 1
 
     def filter(self, filename):
         with open(filename) as org:
@@ -270,37 +411,27 @@ class Filter:
                 self.cline = re.sub(u'([^\u3400-\u4db5\u4e00-\u9fa5a-zA-Z])', '*', self.cline)
                 self.cline = self.cline.lower()
 
-                # Latinization
-                latin = lazy_pinyin(list(self.cline))
-                sentence = []
-                # map pinyin and letter to specific number
-                for i in range(len(latin)):
-                    if latin[i] == '':
-                        continue
-                    if latin[i] not in pinyin_alpha_map:
-                        for c in latin[i]:
-                            sentence.append(pinyin_alpha_map[c])
-                        continue
-                    sentence.append(pinyin_alpha_map[latin[i]])
+                self.filter_line(self.cline)
 
-                self.filter_line(sentence)
 
 ##################################################
 #              function definition               #
 ##################################################
 def init_pinyin_alpha_map():
+    global map_cnt
+
     # Placeholder
     pinyin_alpha_map['*'] = 0
 
-    i = 1
+    map_cnt = 1
 
     for letter in ALPHABET_LIST:
-        pinyin_alpha_map[letter] = i
-        i = i + 1
+        pinyin_alpha_map[letter] = map_cnt
+        map_cnt += 1
 
     for pinyin in PINYIN_LIST:
-        pinyin_alpha_map[pinyin] = i
-        i = i + 1
+        pinyin_alpha_map[pinyin] = map_cnt
+        map_cnt += 1
 
 
 ##################################################
