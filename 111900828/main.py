@@ -252,7 +252,7 @@ class Filter:
             IOError: unable to open the given file
         """
         try:
-            with open(filename, 'r+') as words:
+            with open(filename, 'r+', encoding='utf-8') as words:
                 lines = words.readlines()
                 # to record the order of sensitive word
                 word_count = 0
@@ -343,7 +343,7 @@ class Filter:
         :return none
         """
         try:
-            with open(filename, 'w+') as ans:
+            with open(filename, 'w+', encoding='utf-8') as ans:
                 print("Total: {}".format(self.total), file=ans)
 
                 for i in self.result:
@@ -468,7 +468,7 @@ class Filter:
 
     def filter(self, filename):
         try:
-            with open(filename) as org:
+            with open(filename, 'r+', encoding='utf-8') as org:
                 lines = org.readlines()
                 for line in lines:
                     self.__cline_org = line
@@ -509,6 +509,7 @@ def init_pinyin_alpha_map():
         pinyin_alpha_map[pinyin] = map_cnt
         map_cnt += 1
 
+
 def clear_status():
     global map_cnt
     global pinyin_alpha_map
@@ -517,6 +518,7 @@ def clear_status():
     map_cnt = 0
     pinyin_alpha_map.clear()
     glyph_code_map.clear()
+
 
 ##################################################
 #                   entrance                     #
