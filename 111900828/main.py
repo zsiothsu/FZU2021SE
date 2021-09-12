@@ -252,7 +252,7 @@ class Filter:
             IOError: unable to open the given file
         """
         try:
-            with open(filename) as words:
+            with open(filename, 'r+') as words:
                 lines = words.readlines()
                 # to record the order of sensitive word
                 word_count = 0
@@ -400,12 +400,12 @@ class Filter:
                     word_begin_index = 0
 
                 if is_pinyin_code_in_current:
+                    if current == self.sensitive_dict:
+                        word_begin_index = i
+
                     # append fail pointer for glyph code branch
                     if is_glyph_code_in_current:
                         fail_pointer_stack.append((i + 1, current[glyph_code], word_begin_index))
-
-                    if current == self.sensitive_dict:
-                        word_begin_index = i
 
                     current = current[pinyin_code]
                     if current['end']:
@@ -509,6 +509,14 @@ def init_pinyin_alpha_map():
         pinyin_alpha_map[pinyin] = map_cnt
         map_cnt += 1
 
+def clear_status():
+    global map_cnt
+    global pinyin_alpha_map
+    global glyph_code_map
+
+    map_cnt = 0
+    pinyin_alpha_map.clear()
+    glyph_code_map.clear()
 
 ##################################################
 #                   entrance                     #
