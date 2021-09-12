@@ -118,7 +118,7 @@ class Word:
         """ enumerate various confusing of words
 
         for chinese, confusing can be: single Chinese character,
-        full spelling pinyin, initail pinyin and dismantling of
+        full spelling pinyin, initial pinyin and dismantling of
         Chinese characters
         There is no confusing on English, a word will be processed
         in letter
@@ -212,7 +212,7 @@ class Word:
 class Filter:
     """ Filter
 
-    Main class of sensitve word detector
+    Main class of sensitive word detector
 
     :attributes
         original_sensitive_word_list[list]: list of original sensitive words
@@ -318,7 +318,7 @@ class Filter:
             end: end index of the word at original text
             index: the order of word in sensitive words list
 
-        :return: none
+        :return none
         """
         if len(self.result) != 0:
             if begin == (self.result[-1])[3] and self.__lineno == (self.result[-1])[0]:
@@ -340,7 +340,7 @@ class Filter:
         :arg
             filename[string]: output file
 
-        :return: none
+        :return none
         """
         try:
             with open(filename, 'w+') as ans:
@@ -360,10 +360,14 @@ class Filter:
         :arg
             sentence[string]: text to be detected
 
-        :return: none
+        :return -> set
+            the starting index of the answer
         """
         current = self.sensitive_dict
         word_begin_index = 0
+
+        # a set storing answer for unit test
+        ans_set = set()
 
         # fail pointer:
         #   fail_pointer_stack(position, dict of glyph code branch, curren word_begin_index)
@@ -406,6 +410,7 @@ class Filter:
                     current = current[pinyin_code]
                     if current['end']:
                         self.logger(word_begin_index, i + 1, current['word'])
+                        ans_set.add(word_begin_index)
 
                 elif is_glyph_code_in_current:
                     if current == self.sensitive_dict:
@@ -414,6 +419,7 @@ class Filter:
                     current = current[glyph_code]
                     if current['end']:
                         self.logger(word_begin_index, i + 1, current['word'])
+                        ans_set.add(word_begin_index)
 
                 # failed to match
                 else:
@@ -442,6 +448,7 @@ class Filter:
                     current = current[pinyin_code]
                     if current['end']:
                         self.logger(word_begin_index, i + 1, current['word'])
+                        ans_set.add(word_begin_index)
                     i = i + 1
                     continue
 
@@ -456,6 +463,8 @@ class Filter:
                     word_begin_index = 0
 
             i += 1
+
+        return ans_set
 
     def filter(self, filename):
         try:
@@ -483,7 +492,7 @@ def init_pinyin_alpha_map():
 
     map pinyin and alphabet to specific number
     
-    :return: none
+    :return none
     """
     global map_cnt
 
@@ -506,6 +515,7 @@ def init_pinyin_alpha_map():
 ##################################################
 def main():
     init_pinyin_alpha_map()
+
     f = Filter()
     f.read_sensitive_words(file_words)
     f.filter(file_org)
